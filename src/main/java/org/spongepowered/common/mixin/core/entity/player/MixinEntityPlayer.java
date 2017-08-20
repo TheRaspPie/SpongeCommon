@@ -53,12 +53,7 @@ import net.minecraft.scoreboard.Team;
 import net.minecraft.stats.AchievementList;
 import net.minecraft.stats.StatBase;
 import net.minecraft.stats.StatList;
-import net.minecraft.util.DamageSource;
-import net.minecraft.util.EnumHand;
-import net.minecraft.util.EnumParticleTypes;
-import net.minecraft.util.FoodStats;
-import net.minecraft.util.SoundCategory;
-import net.minecraft.util.SoundEvent;
+import net.minecraft.util.*;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.text.ITextComponent;
@@ -77,6 +72,7 @@ import org.spongepowered.api.event.cause.entity.damage.DamageTypes;
 import org.spongepowered.api.event.cause.entity.damage.source.EntityDamageSource;
 import org.spongepowered.api.event.entity.AttackEntityEvent;
 import org.spongepowered.api.event.entity.DamageEntityEvent;
+import org.spongepowered.api.item.ItemType;
 import org.spongepowered.api.item.inventory.ItemStackSnapshot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
@@ -152,6 +148,7 @@ public abstract class MixinEntityPlayer extends MixinEntityLivingBase implements
     @Shadow protected abstract void destroyVanishingCursedItems(); // Filter vanishing curse enchanted items
     @Shadow public abstract boolean isPlayerSleeping();
     @Shadow public abstract void wakeUpPlayer(boolean immediately, boolean updateWorldFlag, boolean setSpawn);
+    @Shadow public abstract CooldownTracker getCooldownTracker();
 
     private boolean affectsSpawning = true;
     private UUID collidingEntityUuid = null;
@@ -413,6 +410,11 @@ public abstract class MixinEntityPlayer extends MixinEntityLivingBase implements
     @Override
     public UUID getCollidingEntityUuid() {
         return this.collidingEntityUuid;
+    }
+
+    @Override
+    public void setItemCooldown(ItemType item, int ticks) {
+        this.getCooldownTracker().setCooldown((Item) item, ticks);
     }
 
     /**
