@@ -1086,12 +1086,14 @@ public abstract class MixinWorld implements World, IMixinWorld {
     private boolean onGetClosestPlayerCheck(com.google.common.base.Predicate<net.minecraft.entity.Entity> predicate, Object entityPlayer) {
         EntityPlayer player = (EntityPlayer) entityPlayer;
         IMixinEntity mixinEntity = (IMixinEntity) player;
+        // TODO PlayerVanish: Figure out what to do here
         return predicate.apply(player) && !mixinEntity.isVanished();
     }
 
     @Inject(method = "playSound(Lnet/minecraft/entity/player/EntityPlayer;DDDLnet/minecraft/util/SoundEvent;Lnet/minecraft/util/SoundCategory;FF)V", at = @At("HEAD"), cancellable = true)
     private void spongePlaySoundAtEntity(EntityPlayer entity, double x, double y, double z, SoundEvent name, net.minecraft.util.SoundCategory category, float volume, float pitch, CallbackInfo callbackInfo) {
         if (entity instanceof IMixinEntity) {
+            // TODO PlayerVanish: Figure out what to do here
             if (((IMixinEntity) entity).isVanished()) {
                 callbackInfo.cancel();
             }

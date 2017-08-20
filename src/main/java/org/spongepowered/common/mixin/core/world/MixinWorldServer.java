@@ -2128,6 +2128,7 @@ public abstract class MixinWorldServer extends MixinWorld implements IMixinWorld
             float volume, float pitch) {
 
         if (player instanceof IMixinEntity) {
+            // TODO PlayerVanish: Figure out what to do here
             if (((IMixinEntity) player).isVanished()) {
                 return;
             }

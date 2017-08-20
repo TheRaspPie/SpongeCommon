@@ -106,6 +106,12 @@ public interface IMixinEntity extends org.spongepowered.api.entity.Entity {
 
     void setVanished(boolean vanished);
 
+    boolean isShownTo(UUID player);
+
+    void showTo(UUID player);
+
+    void hideFrom(UUID player);
+
     boolean ignoresCollision();
 
     void setIgnoresCollision(boolean prevents);

@@ -221,8 +221,7 @@ public abstract class MixinEntityLiving extends MixinEntityLivingBase implements
      */
     @Inject(method = "setAttackTarget", at = @At("HEAD"), cancellable = true)
     public void onSetAttackTarget(@Nullable EntityLivingBase entitylivingbaseIn, CallbackInfo ci) {
-        if (entitylivingbaseIn != null && ((IMixinEntity) entitylivingbaseIn).isVanished()
-            && ((IMixinEntity) entitylivingbaseIn).isUntargetable()) {
+        if (entitylivingbaseIn != null && ((IMixinEntity) entitylivingbaseIn).isUntargetable()) {
             this.attackTarget = null;
             ci.cancel();
         }
@@ -239,7 +238,7 @@ public abstract class MixinEntityLiving extends MixinEntityLivingBase implements
     @Overwrite
     public EntityLivingBase getAttackTarget() {
         if (this.attackTarget != null) {
-            if (((IMixinEntity) this.attackTarget).isVanished() && ((IMixinEntity) this.attackTarget).isUntargetable()) {
+            if (((IMixinEntity) this.attackTarget).isUntargetable()) {
                 this.attackTarget = null;
             }
         }

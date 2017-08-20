@@ -545,6 +545,7 @@ public abstract class MixinEntityLivingBase extends MixinEntity implements Livin
     @Redirect(method = "updateItemUse", at = @At(value = "INVOKE", target = WORLD_SPAWN_PARTICLE))
     public void spawnItemParticle(World world, EnumParticleTypes particleTypes, double xCoord, double yCoord, double zCoord, double xOffset,
             double yOffset, double zOffset, int ... p_175688_14_) {
+        // TODO PlayerVanish: Figure out what to do here
         if (!this.isVanished()) {
             this.world.spawnParticle(particleTypes, xCoord, yCoord, zCoord, xOffset, yOffset, zOffset, p_175688_14_);
         }
@@ -805,7 +806,7 @@ public abstract class MixinEntityLivingBase extends MixinEntity implements Livin
      */
     @Overwrite
     public boolean canBeCollidedWith() {
-        return !(this.isVanished() && this.ignoresCollision()) && !this.isDead;
+        return !this.ignoresCollision() && !this.isDead;
     }
 
     @Override

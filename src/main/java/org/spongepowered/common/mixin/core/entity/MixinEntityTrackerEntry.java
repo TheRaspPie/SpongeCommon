@@ -30,6 +30,7 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.network.NetHandlerPlayServer;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.SPacketPlayerListItem;
+import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -111,13 +112,14 @@ public abstract class MixinEntityTrackerEntry {
 
     @Inject(method = "isVisibleTo", at = @At("HEAD"), cancellable = true)
     private void onVisibilityCheck(EntityPlayerMP entityPlayerMP, CallbackInfoReturnable<Boolean> callbackInfoReturnable) {
-        if (((IMixinEntity) this.trackedEntity).isVanished()) {
+        if (((IMixinEntity) this.trackedEntity).isVanished() && !((IMixinEntity) this.trackedEntity).isShownTo(((Player) entityPlayerMP).getUniqueId())) {
             callbackInfoReturnable.setReturnValue(false);
         }
     }
 
     @Inject(method = "sendPacketToTrackedPlayers", at = @At("HEAD"), cancellable = true)
     private void checkIfTrackedIsInvisiblePriorToSendingPacketToPlayers(Packet<?> packet, CallbackInfo callBackInfo) {
+        // TODO PlayerVanish: Figure out what to do here
         if (((IMixinEntity) this.trackedEntity).isVanished()) {
             callBackInfo.cancel();
         }

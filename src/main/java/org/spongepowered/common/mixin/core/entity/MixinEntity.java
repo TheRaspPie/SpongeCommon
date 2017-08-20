@@ -129,13 +129,7 @@ import org.spongepowered.common.text.SpongeTexts;
 import org.spongepowered.common.util.SpongeHooks;
 import org.spongepowered.common.util.VecHelper;
 
-import java.util.Collection;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 import javax.annotation.Nullable;
 
@@ -600,42 +594,76 @@ public abstract class MixinEntity implements IMixinEntity {
         return relocated;
     }
 
+    private void addPlayer(EntityPlayerMP entityPlayerMP, EntityTrackerEntry lookup) {
+        if (((Object) this) instanceof EntityPlayerMP) {
+            entityPlayerMP.connection.sendPacket(
+                new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, (EntityPlayerMP) (Object) this));
+        }
+        Packet<?> newPacket = lookup.createSpawnPacket(); // creates the spawn packet for us
+        entityPlayerMP.connection.sendPacket(newPacket);
+        this.currentlyHiddenFromPlayers.remove(((Player) entityPlayerMP).getUniqueId());
+    }
+
+    private void removePlayer(EntityPlayerMP entityPlayerMP) {
+        entityPlayerMP.connection.sendPacket(new SPacketDestroyEntities(this.getEntityId()));
+        if (((Object) this) instanceof EntityPlayerMP) {
+            entityPlayerMP.connection.sendPacket(
+                new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, (EntityPlayerMP) (Object) this));
+        }
+        this.currentlyHiddenFromPlayers.add(((Player) entityPlayerMP).getUniqueId());
+    }
+
     @Inject(method = "onUpdate", at = @At("RETURN"))
     private void spongeOnUpdate(CallbackInfo callbackInfo) {
-        if (this.pendingVisibilityUpdate && !this.world.isRemote) {
+        if (!this.world.isRemote &&
+            (this.isVanished != this.wasVanished
+                || (this.isVanished && !this.shownToPlayers.equals(this.previousShownToPlayers))
+                || (this.visibilityTicks > 0))) {
             final EntityTracker entityTracker = ((WorldServer) this.world).getEntityTracker();
             final EntityTrackerEntry lookup = entityTracker.trackedEntityHashTable.lookup(this.getEntityId());
             if (this.visibilityTicks % 4 == 0) {
                 if (this.isVanished) {
-                    for (EntityPlayerMP entityPlayerMP : lookup.trackingPlayers) {
-                        entityPlayerMP.connection.sendPacket(new SPacketDestroyEntities(this.getEntityId()));
-                        if (((Object) this) instanceof EntityPlayerMP) {
-                            entityPlayerMP.connection.sendPacket(
-                                    new SPacketPlayerListItem(SPacketPlayerListItem.Action.REMOVE_PLAYER, (EntityPlayerMP) (Object) this));
+                    if (this.wasVanished) {
+                        for (EntityPlayerMP entityPlayerMP : SpongeImpl.getServer().getPlayerList().getPlayers()) {
+                            if (((Object) this) == entityPlayerMP) {
+                                continue;
+                            }
+                            UUID uuid = ((Player) entityPlayerMP).getUniqueId();
+                            if (this.shownToPlayers.contains(uuid)) {
+                                if (!this.previousShownToPlayers.contains(uuid)) {
+                                    this.addPlayer(entityPlayerMP, lookup);
+                                }
+                            } else {
+                                if (this.previousShownToPlayers.contains(uuid) || visibilityTicks % 4 == 0) {
+                                    this.removePlayer(entityPlayerMP);
+                                }
+                            }
                         }
+                    } else {
+                        for (EntityPlayerMP entityPlayerMP : lookup.trackingPlayers) {
+                            if (this.shownToPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
+                                continue;
+                            }
+                            this.removePlayer(entityPlayerMP);
+                        }
+                        this.visibilityTicks = 20;
                     }
-                } else {
-                    this.visibilityTicks = 1;
-                    this.pendingVisibilityUpdate = false;
+                } else if (this.wasVanished) {
                     for (EntityPlayerMP entityPlayerMP : SpongeImpl.getServer().getPlayerList().getPlayers()) {
-                        if (((Object) this) == entityPlayerMP) {
+                        if (((Object) this) == entityPlayerMP || !this.currentlyHiddenFromPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
                             continue;
                         }
-                        if (((Object) this) instanceof EntityPlayerMP) {
-                            Packet<?> packet = new SPacketPlayerListItem(SPacketPlayerListItem.Action.ADD_PLAYER, (EntityPlayerMP) (Object) this);
-                            entityPlayerMP.connection.sendPacket(packet);
-                        }
-                        Packet<?> newPacket = lookup.createSpawnPacket(); // creates the spawn packet for us
-                        entityPlayerMP.connection.sendPacket(newPacket);
+                        this.addPlayer(entityPlayerMP, lookup);
                     }
                 }
             }
             if (this.visibilityTicks > 0) {
                 this.visibilityTicks--;
-            } else {
-                this.pendingVisibilityUpdate = false;
             }
         }
+        this.wasVanished = this.isVanished;
+        this.previousShownToPlayers.clear();
+        this.previousShownToPlayers.addAll(this.shownToPlayers);
     }
 
     @Override
@@ -1108,8 +1136,11 @@ public abstract class MixinEntity implements IMixinEntity {
     private boolean collision = false;
     private boolean untargetable = false;
     private boolean isVanished = false;
+    private boolean wasVanished = false;
+    private final Set<UUID> shownToPlayers = new HashSet<>();
+    private final Set<UUID> previousShownToPlayers = new HashSet<>();
+    private final Set<UUID> currentlyHiddenFromPlayers = new HashSet<>();
 
-    private boolean pendingVisibilityUpdate = false;
     private int visibilityTicks = 0;
 
     @Override
@@ -1120,8 +1151,21 @@ public abstract class MixinEntity implements IMixinEntity {
     @Override
     public void setVanished(boolean vanished) {
         this.isVanished = vanished;
-        this.pendingVisibilityUpdate = true;
-        this.visibilityTicks = 20;
+    }
+
+    @Override
+    public boolean isShownTo(UUID player) {
+        return this.shownToPlayers.contains(player);
+    }
+
+    @Override
+    public void showTo(UUID player) {
+        this.shownToPlayers.add(player);
+    }
+
+    @Override
+    public void hideFrom(UUID player) {
+        this.shownToPlayers.remove(player);
     }
 
     @Override
@@ -1152,17 +1196,18 @@ public abstract class MixinEntity implements IMixinEntity {
      */
     @Redirect(method = "playSound", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/Entity;isSilent()Z"))
     public boolean checkIsSilentOrInvis(net.minecraft.entity.Entity entity) {
-        return entity.isSilent() || this.isVanished;
+        return entity.isSilent() || (((IMixinEntity) entity).isVanished() && !((IMixinEntity) entity).isShownTo(this.getUniqueId()));
     }
 
     @Redirect(method = "applyEntityCollision", at = @At(value = "FIELD", target = "Lnet/minecraft/entity/Entity;noClip:Z", opcode = Opcodes.GETFIELD))
     private boolean spongeApplyEntityCollisionCheckVanish(net.minecraft.entity.Entity entity) {
-        return entity.noClip || ((IMixinEntity) entity).isVanished();
+        return entity.noClip || (((IMixinEntity) entity).isVanished() && !((IMixinEntity) entity).isShownTo(this.getUniqueId()));
     }
 
     @Redirect(method = "doWaterSplashEffect", at = @At(value = "INVOKE", target = WORLD_SPAWN_PARTICLE))
     public void spawnParticle(net.minecraft.world.World world, EnumParticleTypes particleTypes, double xCoord, double yCoord, double zCoord,
             double xOffset, double yOffset, double zOffset, int ... p_175688_14_) {
+        // TODO PlayerVanish: Figure out what to do here
         if (!this.isVanished) {
             this.world.spawnParticle(particleTypes, xCoord, yCoord, zCoord, xOffset, yOffset, zOffset, p_175688_14_);
         }
@@ -1171,6 +1216,7 @@ public abstract class MixinEntity implements IMixinEntity {
     @Redirect(method = "createRunningParticles", at = @At(value = "INVOKE", target = WORLD_SPAWN_PARTICLE))
     public void runningSpawnParticle(net.minecraft.world.World world, EnumParticleTypes particleTypes, double xCoord, double yCoord, double zCoord,
             double xOffset, double yOffset, double zOffset, int ... p_175688_14_) {
+        // TODO PlayerVanish: Figure out what to do here
         if (!this.isVanished) {
             this.world.spawnParticle(particleTypes, xCoord, yCoord, zCoord, xOffset, yOffset, zOffset, p_175688_14_);
         }
@@ -1208,8 +1254,7 @@ public abstract class MixinEntity implements IMixinEntity {
     @Override
     public boolean canSee(Entity entity) {
         // note: this implementation will be changing with contextual data
-        Optional<Boolean> optional = entity.get(Keys.VANISH);
-        return (!optional.isPresent() || !optional.get()) && !((IMixinEntity) entity).isVanished();
+        return !((IMixinEntity) entity).isVanished() || ((IMixinEntity) entity).isShownTo(this.getUniqueId());
     }
 
     /**
