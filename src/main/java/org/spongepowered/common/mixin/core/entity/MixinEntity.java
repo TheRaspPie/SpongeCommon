@@ -621,40 +621,38 @@ public abstract class MixinEntity implements IMixinEntity {
                 || (this.visibilityTicks > 0))) {
             final EntityTracker entityTracker = ((WorldServer) this.world).getEntityTracker();
             final EntityTrackerEntry lookup = entityTracker.trackedEntityHashTable.lookup(this.getEntityId());
-            if (this.visibilityTicks % 4 == 0) {
-                if (this.isVanished) {
-                    if (this.wasVanished) {
-                        for (EntityPlayerMP entityPlayerMP : SpongeImpl.getServer().getPlayerList().getPlayers()) {
-                            if (((Object) this) == entityPlayerMP) {
-                                continue;
-                            }
-                            UUID uuid = ((Player) entityPlayerMP).getUniqueId();
-                            if (this.shownToPlayers.contains(uuid)) {
-                                if (!this.previousShownToPlayers.contains(uuid)) {
-                                    this.addPlayer(entityPlayerMP, lookup);
-                                }
-                            } else {
-                                if (this.previousShownToPlayers.contains(uuid) || visibilityTicks % 4 == 0) {
-                                    this.removePlayer(entityPlayerMP);
-                                }
-                            }
-                        }
-                    } else {
-                        for (EntityPlayerMP entityPlayerMP : lookup.trackingPlayers) {
-                            if (this.shownToPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
-                                continue;
-                            }
-                            this.removePlayer(entityPlayerMP);
-                        }
-                        this.visibilityTicks = 20;
-                    }
-                } else if (this.wasVanished) {
+            if (this.isVanished) {
+                if (this.wasVanished) {
                     for (EntityPlayerMP entityPlayerMP : SpongeImpl.getServer().getPlayerList().getPlayers()) {
-                        if (((Object) this) == entityPlayerMP || !this.currentlyHiddenFromPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
+                        if (((Object) this) == entityPlayerMP) {
                             continue;
                         }
-                        this.addPlayer(entityPlayerMP, lookup);
+                        UUID uuid = ((Player) entityPlayerMP).getUniqueId();
+                        if (this.shownToPlayers.contains(uuid)) {
+                            if (!this.previousShownToPlayers.contains(uuid)) {
+                                this.addPlayer(entityPlayerMP, lookup);
+                            }
+                        } else {
+                            if (this.previousShownToPlayers.contains(uuid) || visibilityTicks % 4 == 0) {
+                                this.removePlayer(entityPlayerMP);
+                            }
+                        }
                     }
+                } else {
+                    for (EntityPlayerMP entityPlayerMP : lookup.trackingPlayers) {
+                        if (this.shownToPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
+                            continue;
+                        }
+                        this.removePlayer(entityPlayerMP);
+                    }
+                    this.visibilityTicks = 20;
+                }
+            } else if (this.wasVanished) {
+                for (EntityPlayerMP entityPlayerMP : SpongeImpl.getServer().getPlayerList().getPlayers()) {
+                    if (((Object) this) == entityPlayerMP || !this.currentlyHiddenFromPlayers.contains(((Player) entityPlayerMP).getUniqueId())) {
+                        continue;
+                    }
+                    this.addPlayer(entityPlayerMP, lookup);
                 }
             }
             if (this.visibilityTicks > 0) {
