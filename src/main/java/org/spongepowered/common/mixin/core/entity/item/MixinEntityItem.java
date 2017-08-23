@@ -34,6 +34,7 @@ import org.spongepowered.api.data.manipulator.mutable.RepresentedItemData;
 import org.spongepowered.api.data.value.mutable.Value;
 import org.spongepowered.api.entity.Entity;
 import org.spongepowered.api.entity.Item;
+import org.spongepowered.api.event.SpongeEventFactory;
 import org.spongepowered.api.event.cause.Cause;
 import org.spongepowered.api.event.cause.NamedCause;
 import org.spongepowered.api.item.ItemType;
@@ -47,6 +48,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyConstant;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.common.SpongeImpl;
 import org.spongepowered.common.data.manipulator.mutable.SpongeRepresentedItemData;
 import org.spongepowered.common.data.util.DataConstants;
 import org.spongepowered.common.data.util.NbtDataUtil;
@@ -202,6 +204,13 @@ public abstract class MixinEntityItem extends MixinEntity implements Item, IMixi
     @Override
     public ItemType getItemType() {
         return (ItemType) getItem().getItem();
+    }
+
+    @Inject(method = "combineItems", at = @At(value = "INVOKE", target = "Lnet/minecraft/item/ItemStack;grow(I)V"), cancellable = true)
+    public void onCombineItemsHead(EntityItem other, CallbackInfoReturnable<Boolean> cir) {
+        if (SpongeImpl.postEvent(SpongeEventFactory.createItemMergeItemEvent(Cause.source(this).build(), (Item) other, this))) {
+            cir.setReturnValue(false);
+        }
     }
 
     @Inject(method = "combineItems", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/item/EntityItem;setDead()V"))
