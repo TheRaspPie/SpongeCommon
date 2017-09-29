@@ -22,9 +22,19 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.spongepowered.common.mixin.realtime;
+package org.spongepowered.common.mixin.core.network.datasync;
 
-public interface IMixinMinecraftServer {
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import net.minecraft.network.datasync.EntityDataManager;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Mutable;
+import org.spongepowered.asm.mixin.Shadow;
 
-    long getRealTimeTicks();
+import java.util.Map;
+
+@Mixin(EntityDataManager.class)
+public class MixinEntityDataManager {
+
+    @Shadow @Final @Mutable public Map < Integer, EntityDataManager.DataEntry<? >> entries = new Int2ObjectOpenHashMap<>();
 }

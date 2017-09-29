@@ -33,6 +33,7 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.crash.CrashReportCategory;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.IEntityOwnable;
 import net.minecraft.entity.passive.EntityTameable;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -570,10 +571,11 @@ public final class CauseTracker {
      * The difference between {@link #spawnEntityWithCause(Entity, Cause)} is that it bypasses
      * any phases and directly throws a spawn entity event.
      *
+     * @param world The world
      * @param entity The entity
      * @return True if the entity spawn was successful
      */
-    public boolean spawnEntity(Entity entity) {
+    public boolean spawnEntity(World world, Entity entity) {
         checkNotNull(entity, "Entity cannot be null!");
 
         // Sponge Start - handle construction phases
@@ -582,7 +584,7 @@ public final class CauseTracker {
         }
 
         final net.minecraft.entity.Entity minecraftEntity = EntityUtil.toNative(entity);
-        final WorldServer minecraftWorld = (WorldServer) minecraftEntity.world;
+        final WorldServer minecraftWorld = (WorldServer) world;
         final IMixinWorldServer mixinWorldServer = (IMixinWorldServer) minecraftWorld;
         final PhaseData phaseData = this.stack.peek();
         final IPhaseState phaseState = phaseData.state;
@@ -609,20 +611,12 @@ public final class CauseTracker {
                 SpongeImplHooks.firePlayerJoinSpawnEvent((EntityPlayerMP) entityplayer);
             } else {
                 // Sponge start - check for vanilla owner
-                if (minecraftEntity instanceof EntityTameable) {
-                    EntityTameable tameable = (EntityTameable) entity;
-                    EntityLivingBase owner = tameable.getOwner();
-                    if (owner != null) {
-                        User user = null;
-                        if (!(owner instanceof EntityPlayer)) {
-                            user = ((IMixinEntity) owner).getCreatorUser().orElse(null);
-                        } else {
-                           user = (User) owner;
-                        }
-                        if (user != null) {
-                            context.owner = user;
-                            entity.setCreator(user.getUniqueId());
-                        }
+                if (minecraftEntity instanceof IEntityOwnable) {
+                    IEntityOwnable ownable = (IEntityOwnable) entity;
+                    net.minecraft.entity.Entity owner = ownable.getOwner();
+                    if (owner != null && owner instanceof EntityPlayer) {
+                        context.owner = (User) owner;
+                        entity.setCreator(ownable.getOwnerId());
                     }
                 } else if (minecraftEntity instanceof EntityThrowable) {
                     EntityThrowable throwable = (EntityThrowable) minecraftEntity;
@@ -676,11 +670,12 @@ public final class CauseTracker {
      * The core implementation of {@link World#spawnEntity(Entity, Cause)} that
      * bypasses any sort of cause tracking and throws an event directly
      *
+     * @param world
      * @param entity
      * @param cause
      * @return
      */
-    public boolean spawnEntityWithCause(Entity entity, Cause cause) {
+    public boolean spawnEntityWithCause(World world, Entity entity, Cause cause) {
         checkNotNull(entity, "Entity cannot be null!");
         checkNotNull(cause, "Cause cannot be null!");
 
@@ -690,8 +685,7 @@ public final class CauseTracker {
         }
 
         final net.minecraft.entity.Entity minecraftEntity = EntityUtil.toNative(entity);
-        final World spongeWorld = (World) minecraftEntity.world;
-        final WorldServer worldServer = (WorldServer) minecraftEntity.world;
+        final WorldServer worldServer = (WorldServer) world;
         final IMixinWorldServer mixinWorldServer = (IMixinWorldServer) worldServer;
         // Sponge End - continue with vanilla mechanics
 

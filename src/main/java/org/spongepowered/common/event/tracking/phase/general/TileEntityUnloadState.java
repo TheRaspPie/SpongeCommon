@@ -22,25 +22,27 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-package org.spongepowered.common.mixin.tileentityactivation;
+package org.spongepowered.common.event.tracking.phase.general;
 
-import net.minecraft.world.WorldServer;
-import org.spongepowered.api.util.annotation.NonnullByDefault;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.common.mixin.plugin.tileentityactivation.TileEntityActivation;
+import net.minecraft.util.math.BlockPos;
+import org.spongepowered.common.event.tracking.IPhaseState;
+import org.spongepowered.common.event.tracking.PhaseContext;
 
-@NonnullByDefault
-@Mixin(value = net.minecraft.world.World.class, priority = 1006)
-public abstract class MixinWorld_TileEntityActivation {
+public class TileEntityUnloadState extends GeneralState {
 
-    private static final String PROFILER_ESS = "Lnet/minecraft/profiler/Profiler;endStartSection(Ljava/lang/String;)V";
-
-    @Inject(method = "updateEntities", at = @At(value = "INVOKE_STRING", target = PROFILER_ESS, args = "ldc=blockEntities"))
-    private void onBeginUpdateTileEntities(CallbackInfo ci) {
-        TileEntityActivation.activateTileEntities((WorldServer) (Object) this);
+    @Override
+    public boolean canSwitchTo(IPhaseState state) {
+        return true;
     }
 
+    @Override
+    void unwind(PhaseContext context) {
+
+    }
+
+    @Override
+    public boolean shouldCaptureBlockChangeOrSkip(PhaseContext phaseContext,
+        BlockPos pos) {
+        return false;
+    }
 }

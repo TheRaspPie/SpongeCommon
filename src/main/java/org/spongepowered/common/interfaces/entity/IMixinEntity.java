@@ -40,6 +40,7 @@ import org.spongepowered.api.text.Text;
 import org.spongepowered.api.world.Location;
 import org.spongepowered.api.world.World;
 import org.spongepowered.common.data.util.NbtDataUtil;
+import org.spongepowered.common.interfaces.IMixinChunk;
 
 import java.util.List;
 import java.util.Optional;
@@ -150,4 +151,8 @@ public interface IMixinEntity extends org.spongepowered.api.entity.Entity {
     default void onJoinWorld() {
 
     }
+
+    @Nullable IMixinChunk getActiveChunk();
+
+    void setActiveChunk(IMixinChunk chunk);
 }

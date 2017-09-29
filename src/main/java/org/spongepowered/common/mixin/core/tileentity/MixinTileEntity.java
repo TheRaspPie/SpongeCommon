@@ -61,13 +61,17 @@ import org.spongepowered.common.data.util.DataQueries;
 import org.spongepowered.common.data.util.DataUtil;
 import org.spongepowered.common.data.util.NbtDataUtil;
 import org.spongepowered.common.event.tracking.CauseTracker;
+import org.spongepowered.common.interfaces.IMixinChunk;
 import org.spongepowered.common.interfaces.block.tile.IMixinTileEntity;
 import org.spongepowered.common.interfaces.data.IMixinCustomDataHolder;
 import org.spongepowered.common.registry.type.block.TileEntityTypeRegistryModule;
 import org.spongepowered.common.util.VecHelper;
 
+import java.lang.ref.WeakReference;
 import java.util.Collection;
 import java.util.List;
+
+import javax.annotation.Nullable;
 
 @NonnullByDefault
 @Mixin(net.minecraft.tileentity.TileEntity.class)
@@ -82,6 +86,7 @@ public abstract class MixinTileEntity implements TileEntity, IMixinTileEntity {
     // caches owner to avoid constant lookups in chunk
     private User spongeOwner;
     private boolean hasSetOwner = false;
+    private WeakReference<IMixinChunk> activeChunk = new WeakReference<>(null);
 
     @Shadow protected boolean tileEntityInvalid;
     @Shadow protected net.minecraft.world.World world;
@@ -182,6 +187,11 @@ public abstract class MixinTileEntity implements TileEntity, IMixinTileEntity {
     @Override
     public BlockState getBlock() {
         return (BlockState) this.world.getBlockState(this.getPos());
+    }
+
+    @Inject(method = "invalidate", at = @At("RETURN"))
+    public void onSpongeInvalidate(CallbackInfo ci) {
+        this.setActiveChunk(null);
     }
 
     /**
@@ -288,5 +298,16 @@ public abstract class MixinTileEntity implements TileEntity, IMixinTileEntity {
     @Override
     public boolean hasSetOwner() {
         return this.hasSetOwner;
+    }
+
+    @Override
+    @Nullable
+    public IMixinChunk getActiveChunk() {
+        return this.activeChunk.get();
+    }
+
+    @Override
+    public void setActiveChunk(@Nullable IMixinChunk chunk) {
+        this.activeChunk = new WeakReference<IMixinChunk>(chunk);
     }
 }

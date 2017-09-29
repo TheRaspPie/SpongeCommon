@@ -79,7 +79,6 @@ import org.spongepowered.common.event.SpongeCommonEventFactory;
 import org.spongepowered.common.interfaces.world.IMixinDimensionType;
 import org.spongepowered.common.interfaces.world.IMixinGameRules;
 import org.spongepowered.common.interfaces.world.IMixinWorldInfo;
-import org.spongepowered.common.interfaces.world.IMixinWorldSettings;
 import org.spongepowered.common.registry.type.entity.GameModeRegistryModule;
 import org.spongepowered.common.registry.type.world.DimensionTypeRegistryModule;
 import org.spongepowered.common.registry.type.world.PortalAgentRegistryModule;
@@ -185,7 +184,7 @@ public abstract class MixinWorldInfo implements WorldProperties, IMixinWorldInfo
         final WorldArchetype archetype = (WorldArchetype) (Object) settings;
         setDimensionType(archetype.getDimensionType());
 
-        boolean configNewlyCreated = createWorldConfig();
+        createWorldConfig();
         setEnabled(archetype.isEnabled());
         setLoadOnStartup(archetype.loadOnStartup());
         setKeepSpawnLoaded(archetype.doesKeepSpawnLoaded());
@@ -200,10 +199,6 @@ public abstract class MixinWorldInfo implements WorldProperties, IMixinWorldInfo
         }
         setDoesGenerateBonusChest(archetype.doesGenerateBonusChest());
         setSerializationBehavior(archetype.getSerializationBehavior());
-        // Mark configs enabled if coming from WorldCreationSettings builder and config didn't previously exist.
-        if (configNewlyCreated && ((IMixinWorldSettings) (Object) settings).isFromBuilder()) {
-            this.getOrCreateWorldConfig().getConfig().setConfigEnabled(true);
-        }
         this.getOrCreateWorldConfig().save();
     }
 
@@ -812,8 +807,9 @@ public abstract class MixinWorldInfo implements WorldProperties, IMixinWorldInfo
         this.uuid = nbtUniqueId;
         this.dimensionId = nbt.getInteger(NbtDataUtil.DIMENSION_ID);
         final String dimensionTypeId = nbt.getString(NbtDataUtil.DIMENSION_TYPE);
-        this.setDimensionType(DimensionTypeRegistryModule.getInstance().getById(dimensionTypeId)
-                .orElseThrow(FunctionalUtil.invalidArgument("Could not find a DimensionType by id: " + dimensionTypeId)));
+        final DimensionType dimensionType = (org.spongepowered.api.world.DimensionType)(Object) WorldManager.getDimensionType(this.dimensionId).orElse(null);
+        this.setDimensionType(dimensionType != null ? dimensionType : DimensionTypeRegistryModule.getInstance().getById(dimensionTypeId)
+                .orElseThrow(FunctionalUtil.invalidArgument("Could not find a DimensionType registered for world '" + this.getWorldName() + "' with dim id: " + this.dimensionId)));
         this.generateBonusChest = nbt.getBoolean(NbtDataUtil.GENERATE_BONUS_CHEST);
         this.portalAgentType = PortalAgentRegistryModule.getInstance().validatePortalAgent(nbt.getString(NbtDataUtil.PORTAL_AGENT_TYPE), this.levelName);
         this.trackedUniqueIdCount = 0;

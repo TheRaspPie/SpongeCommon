@@ -91,6 +91,7 @@ import org.spongepowered.api.entity.living.player.Player;
 import org.spongepowered.api.entity.projectile.EnderPearl;
 import org.spongepowered.api.entity.projectile.source.ProjectileSource;
 import org.spongepowered.api.event.cause.Cause;
+import org.spongepowered.api.event.cause.NamedCause;
 import org.spongepowered.api.service.context.Context;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.chat.ChatType;
@@ -127,6 +128,9 @@ import org.spongepowered.common.block.BlockUtil;
 import org.spongepowered.common.block.SpongeBlockSnapshotBuilder;
 import org.spongepowered.common.data.type.SpongeTileEntityType;
 import org.spongepowered.common.entity.EntityUtil;
+import org.spongepowered.common.event.tracking.CauseTracker;
+import org.spongepowered.common.event.tracking.PhaseContext;
+import org.spongepowered.common.event.tracking.phase.general.GeneralPhase;
 import org.spongepowered.common.interfaces.IMixinChunk;
 import org.spongepowered.common.interfaces.data.IMixinCustomDataHolder;
 import org.spongepowered.common.interfaces.entity.IMixinEntity;
@@ -137,6 +141,7 @@ import org.spongepowered.common.interfaces.world.IMixinWorldInfo;
 import org.spongepowered.common.interfaces.world.IMixinWorldProvider;
 import org.spongepowered.common.interfaces.world.IMixinWorldServer;
 import org.spongepowered.common.interfaces.world.gen.IMixinChunkProviderServer;
+import org.spongepowered.common.mixin.tileentityactivation.MixinWorldServer_TileEntityActivation;
 import org.spongepowered.common.util.SpongeHooks;
 import org.spongepowered.common.util.VecHelper;
 import org.spongepowered.common.world.extent.ExtentViewDownsize;
@@ -181,6 +186,7 @@ public abstract class MixinWorld implements World, IMixinWorld {
     protected boolean processingExplosion = false;
     protected boolean isDefinitelyFake = false;
     protected boolean hasChecked = false;
+    protected NamedCause worldNamedCause;
 
     // @formatter:off
     @Shadow @Final public boolean isRemote;
@@ -227,10 +233,11 @@ public abstract class MixinWorld implements World, IMixinWorld {
     @Shadow public abstract boolean checkLight(BlockPos pos);
     @Shadow public abstract boolean checkLightFor(EnumSkyBlock lightType, BlockPos pos);
     @Shadow public abstract boolean addTileEntity(net.minecraft.tileentity.TileEntity tile);
-    @Shadow protected abstract void onEntityAdded(net.minecraft.entity.Entity entityIn);
+    @Shadow public abstract void onEntityAdded(net.minecraft.entity.Entity entityIn);
+    @Shadow public abstract boolean isAreaLoaded(BlockPos from, BlockPos to);
     @Shadow public abstract boolean isAreaLoaded(BlockPos center, int radius, boolean allowEmpty);
     @Shadow public abstract boolean isAreaLoaded(int xStart, int yStart, int zStart, int xEnd, int yEnd, int zEnd, boolean allowEmpty);
-    @Shadow protected abstract void onEntityRemoved(net.minecraft.entity.Entity entityIn);
+    @Shadow public abstract void onEntityRemoved(net.minecraft.entity.Entity entityIn);
     @Shadow public abstract void updateEntity(net.minecraft.entity.Entity ent);
     @Shadow public abstract boolean isBlockLoaded(BlockPos pos);
     @Shadow public abstract boolean addWeatherEffect(net.minecraft.entity.Entity entityIn);
@@ -238,7 +245,7 @@ public abstract class MixinWorld implements World, IMixinWorld {
     @Shadow public abstract BiomeProvider getBiomeProvider();
     @Shadow public abstract boolean isBlockPowered(BlockPos pos);
     @Shadow public abstract net.minecraft.world.chunk.Chunk getChunkFromChunkCoords(int chunkX, int chunkZ);
-    @Shadow protected abstract boolean isChunkLoaded(int x, int z, boolean allowEmpty);
+    @Shadow public abstract boolean isChunkLoaded(int x, int z, boolean allowEmpty);
     @Shadow public abstract net.minecraft.world.Explosion newExplosion(@Nullable net.minecraft.entity.Entity entityIn, double x, double y, double z, float strength,
             boolean isFlaming, boolean isSmoking);
     @Shadow public abstract List<net.minecraft.entity.Entity> getEntities(Class<net.minecraft.entity.Entity> entityType,
@@ -288,18 +295,6 @@ public abstract class MixinWorld implements World, IMixinWorld {
         } else {
             return ((IMixinWorldProvider) provider).createServerWorldBorder();
         }
-    }
-
-    @Inject(method = "<init>", at = @At("RETURN"))
-    public void onConstructed(ISaveHandler saveHandlerIn, WorldInfo info, WorldProvider providerIn, Profiler profilerIn, boolean client,
-            CallbackInfo ci) {
-        if (info == null) {
-            SpongeImpl.getLogger().warn("World constructed without a WorldInfo! This will likely cause problems. Subsituting dummy info.",
-                    new RuntimeException("Stack trace:"));
-            this.worldInfo = new WorldInfo(new WorldSettings(0, GameType.NOT_SET, false, false, WorldType.DEFAULT),
-                    "sponge$dummy_world");
-        }
-        this.worldInfo = info;
     }
 
     @SuppressWarnings("rawtypes")
@@ -1174,9 +1169,6 @@ public abstract class MixinWorld implements World, IMixinWorld {
     }
 
     /**
-<<<<<<< HEAD
-     * @reason Avoid loading chunk for getting raw light.
-=======
      * @author blood - February 20th, 2017
      * @reason Avoids loading unloaded chunk when checking for sky.
      *
@@ -1542,6 +1534,9 @@ public abstract class MixinWorld implements World, IMixinWorld {
         }
 
         // this.profiler.endStartSection("blockEntities"); // Sponge - Don't use the profiler
+
+        spongeTileEntityActivation();
+
         this.processingLoadedTiles = true;
         Iterator<net.minecraft.tileentity.TileEntity> iterator = this.tickableTileEntities.iterator();
 
@@ -1589,6 +1584,11 @@ public abstract class MixinWorld implements World, IMixinWorld {
 
         this.processingLoadedTiles = false;
         this.startPendingTileEntityTimings(); // Sponge
+        if (!this.isRemote && CauseTracker.ENABLED) {
+            CauseTracker.getInstance().switchToPhase(GeneralPhase.State.TILE_ENTITY_UNLOAD, PhaseContext.start()
+                    .add(this.worldNamedCause)
+                    .complete());
+        }
 
         if (!this.tileEntitiesToBeRemoved.isEmpty()) {
             // Sponge start - use forge hook
@@ -1600,6 +1600,10 @@ public abstract class MixinWorld implements World, IMixinWorld {
             this.tickableTileEntities.removeAll(this.tileEntitiesToBeRemoved);
             this.loadedTileEntityList.removeAll(this.tileEntitiesToBeRemoved);
             this.tileEntitiesToBeRemoved.clear();
+        }
+
+        if (!this.isRemote && CauseTracker.ENABLED) {
+            CauseTracker.getInstance().completePhase(GeneralPhase.State.TILE_ENTITY_UNLOAD);
         }
 
         // this.profiler.endStartSection("pendingBlockEntities"); // Sponge - Don't use the profiler
@@ -1630,7 +1634,14 @@ public abstract class MixinWorld implements World, IMixinWorld {
         // this.profiler.endSection(); // Sponge - Don't use the profiler
     }
 
-    protected void entityActivationCheck() {
+    /**
+     * Overridden in {@link MixinWorldServer_TileEntityActivation}
+     */
+    public void spongeTileEntityActivation() {
+
+    }
+
+    public void entityActivationCheck() {
         // Overridden in MixinWorldServer_Activation
     }
 

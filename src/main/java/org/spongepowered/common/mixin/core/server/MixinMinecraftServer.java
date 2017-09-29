@@ -39,10 +39,13 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.management.PlayerList;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.datafix.DataFixer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.RayTraceResult;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.world.EnumDifficulty;
 import net.minecraft.world.GameType;
@@ -68,6 +71,7 @@ import org.spongepowered.api.scoreboard.Scoreboard;
 import org.spongepowered.api.service.permission.PermissionService;
 import org.spongepowered.api.text.Text;
 import org.spongepowered.api.text.channel.MessageChannel;
+import org.spongepowered.api.util.GuavaCollectors;
 import org.spongepowered.api.util.Tristate;
 import org.spongepowered.api.world.ChunkTicketManager;
 import org.spongepowered.api.world.Location;
@@ -113,7 +117,6 @@ import org.spongepowered.common.util.VecHelper;
 import org.spongepowered.common.world.WorldManager;
 import org.spongepowered.common.world.storage.SpongeChunkLayout;
 
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -124,7 +127,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
@@ -473,11 +475,9 @@ public abstract class MixinMinecraftServer implements Server, ConsoleSource, IMi
 
     @Override
     public Collection<WorldProperties> getUnloadedWorlds() {
-        try {
-            return WorldManager.getUnloadedWorlds();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        return WorldManager.getAllWorldProperties().stream()
+                .filter(props -> !this.getWorld(props.getUniqueId()).isPresent())
+                .collect(GuavaCollectors.toImmutableSet());
     }
 
     @Override
@@ -649,14 +649,30 @@ public abstract class MixinMinecraftServer implements Server, ConsoleSource, IMi
         if (SpongeCommonEventFactory.lastAnimationPlayer != null) {
             EntityPlayerMP player = SpongeCommonEventFactory.lastAnimationPlayer.get();
             if (player != null && lastAnimTick != lastPrimaryTick && lastAnimTick != lastSecondaryTick && lastAnimTick != 0 && lastAnimTick - lastPrimaryTick > 3 && lastAnimTick - lastSecondaryTick > 3) {
+                BlockSnapshot blockSnapshot = BlockSnapshot.NONE;
+                EnumFacing side = null;
+                final double distance = SpongeImplHooks.getBlockReachDistance((EntityPlayerMP) player) + 1;
+                final Vec3d startPos = new Vec3d(player.posX, player.posY + player.getEyeHeight(), player.posZ);
+                final Vec3d endPos = startPos.add(new Vec3d(player.getLookVec().x * distance, player.getLookVec().y * distance, player.getLookVec().z * distance));
+                final RayTraceResult rayTraceResult = player.world.rayTraceBlocks(startPos, endPos);
+                // Hit non-air block
+                if (rayTraceResult != null && rayTraceResult.getBlockPos() != null) {
+                    blockSnapshot = new Location<>((World) player.world, VecHelper.toVector3d(rayTraceResult.getBlockPos())).createSnapshot();
+                    side = rayTraceResult.sideHit;
+                }
+
                 if (player.getHeldItemMainhand() != null) {
-                    if (SpongeCommonEventFactory.callInteractItemEventPrimary(player, player.getHeldItemMainhand(), EnumHand.MAIN_HAND, Optional.empty(), BlockSnapshot.NONE).isCancelled()) {
+                    if (SpongeCommonEventFactory.callInteractItemEventPrimary(player, player.getHeldItemMainhand(), EnumHand.MAIN_HAND, Optional.empty(), blockSnapshot).isCancelled()) {
                         SpongeCommonEventFactory.lastAnimationPacketTick = 0;
                         return;
                     }
                 }
 
-                SpongeCommonEventFactory.callInteractBlockEventPrimary(player, EnumHand.MAIN_HAND);
+                if (side != null) {
+                    SpongeCommonEventFactory.callInteractBlockEventPrimary(player, blockSnapshot, EnumHand.MAIN_HAND, side);
+                } else {
+                    SpongeCommonEventFactory.callInteractBlockEventPrimary(player, EnumHand.MAIN_HAND);
+                }
             }
         }
         SpongeCommonEventFactory.lastAnimationPacketTick = 0;

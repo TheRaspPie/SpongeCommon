@@ -65,6 +65,7 @@ import org.spongepowered.api.data.DataContainer;
 import org.spongepowered.api.entity.EntitySnapshot;
 import org.spongepowered.api.entity.EntityType;
 import org.spongepowered.api.entity.living.player.User;
+import org.spongepowered.api.event.SpongeEventFactory;
 import org.spongepowered.api.event.cause.Cause;
 import org.spongepowered.api.event.cause.NamedCause;
 import org.spongepowered.api.event.entity.CollideEntityEvent;
@@ -89,6 +90,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.common.SpongeImpl;
 import org.spongepowered.common.SpongeImplHooks;
 import org.spongepowered.common.block.BlockUtil;
 import org.spongepowered.common.entity.PlayerTracker;
@@ -100,6 +102,8 @@ import org.spongepowered.common.event.tracking.PhaseData;
 import org.spongepowered.common.event.tracking.phase.generation.GenerationPhase;
 import org.spongepowered.common.interfaces.IMixinCachable;
 import org.spongepowered.common.interfaces.IMixinChunk;
+import org.spongepowered.common.interfaces.block.tile.IMixinTileEntity;
+import org.spongepowered.common.interfaces.entity.IMixinEntity;
 import org.spongepowered.common.interfaces.server.management.IMixinPlayerChunkMapEntry;
 import org.spongepowered.common.interfaces.world.gen.IMixinChunkProviderServer;
 import org.spongepowered.common.util.SpongeHooks;
@@ -136,6 +140,7 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
     private boolean isSpawning = false;
     private net.minecraft.world.chunk.Chunk[] neighbors = new net.minecraft.world.chunk.Chunk[4];
     private long cacheKey;
+    private Cause chunkCause;
     private static final Direction[] CARDINAL_DIRECTIONS = new Direction[] {Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
 
     private static final Vector3i BIOME_SIZE = new Vector3i(SpongeChunkLayout.CHUNK_SIZE.getX(), 1, SpongeChunkLayout.CHUNK_SIZE.getZ());
@@ -188,11 +193,22 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
                     this.sponge_world.getUniqueId().getLeastSignificantBits() ^ (z * 2 + 1));
         }
         this.cacheKey = ChunkPos.asLong(this.x, this.z);
+        this.chunkCause = Cause.source(this.world).build();
     }
 
     @Override
     public long getCacheKey() {
         return this.cacheKey;
+    }
+
+    @Override
+    public boolean isChunkLoaded() {
+        return this.loaded;
+    }
+
+    @Override
+    public boolean isQueuedForUnload() {
+        return this.unloadQueued;
     }
 
     @Override
@@ -203,6 +219,15 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
     @Override
     public void setPersistedChunk(boolean flag) {
         this.persistedChunk = flag;
+        // update persisted status for entities and TE's
+        for (TileEntity tileEntity : this.tileEntities.values()) {
+            ((IMixinTileEntity) tileEntity).setActiveChunk(this);
+        }
+        for (ClassInheritanceMultiMap<Entity> entityList : this.entityLists) {
+            for (Entity entity : entityList) {
+                ((IMixinEntity) entity).setActiveChunk(this);
+            }
+        }
     }
 
     @Override
@@ -213,6 +238,29 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
     @Override
     public void setIsSpawning(boolean spawning) {
         this.isSpawning = spawning;
+    }
+
+    @Inject(method = "addEntity", at = @At("RETURN"))
+    private void onChunkAddEntity(Entity entityIn, CallbackInfo ci) {
+        if (!entityIn.isDead) {
+            ((IMixinEntity) entityIn).setActiveChunk(this);
+        }
+    }
+
+    @Inject(method = "addTileEntity(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/tileentity/TileEntity;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/tileentity/TileEntity;validate()V"))
+    private void onChunkAddTileEntity(BlockPos pos, TileEntity tileEntityIn, CallbackInfo ci) {
+        ((IMixinTileEntity) tileEntityIn).setActiveChunk(this);
+    }
+
+    @Inject(method = "removeEntityAtIndex", at = @At("RETURN"))
+    private void onChunkRemoveEntityAtIndex(Entity entityIn, int index, CallbackInfo ci) {
+        ((IMixinEntity) entityIn).setActiveChunk(null);
+    }
+
+    @Redirect(method = "removeTileEntity", at = @At(value = "INVOKE", target = "Lnet/minecraft/tileentity/TileEntity;invalidate()V"))
+    private void onChunkRemoveTileEntity(TileEntity tileEntityIn) {
+        ((IMixinTileEntity) tileEntityIn).setActiveChunk(null);
+        tileEntityIn.invalidate();
     }
 
     @Inject(method = "onLoad()V", at = @At("RETURN"))
@@ -233,6 +281,7 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
                 ((IMixinChunk) neighbor).setNeighborChunk(oppositeNeighborIndex, (net.minecraft.world.chunk.Chunk) (Object) this);
             }
         }
+        SpongeImpl.postEvent(SpongeEventFactory.createLoadChunkEvent(this.chunkCause, (Chunk) this));
     }
 
     @Inject(method = "onUnload()V", at = @At("RETURN"))
@@ -253,6 +302,7 @@ public abstract class MixinChunk implements Chunk, IMixinChunk, IMixinCachable {
                 ((IMixinChunk) neighbor).setNeighborChunk(oppositeNeighborIndex, null);
             }
         }
+        SpongeImpl.postEvent(SpongeEventFactory.createUnloadChunkEvent(this.chunkCause, (Chunk) this));
     }
 
     @Override

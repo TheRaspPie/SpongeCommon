@@ -27,6 +27,7 @@ package org.spongepowered.common.mixin.plugin.entityactivation;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Maps;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLiving;
 import net.minecraft.entity.EntityLivingBase;
@@ -46,6 +47,7 @@ import net.minecraft.entity.passive.EntityAnimal;
 import net.minecraft.entity.passive.EntitySheep;
 import net.minecraft.entity.passive.EntityVillager;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.projectile.EntityFireball;
 import net.minecraft.entity.projectile.EntityThrowable;
 import net.minecraft.util.math.AxisAlignedBB;
@@ -64,12 +66,12 @@ import org.spongepowered.common.config.category.EntityActivationModCategory;
 import org.spongepowered.common.config.category.EntityActivationRangeCategory;
 import org.spongepowered.common.entity.SpongeEntityType;
 import org.spongepowered.common.interfaces.IMixinChunk;
+import org.spongepowered.common.interfaces.entity.IMixinEntity;
 import org.spongepowered.common.interfaces.world.IMixinWorld;
 import org.spongepowered.common.interfaces.world.IMixinWorldServer;
 import org.spongepowered.common.interfaces.world.gen.IMixinChunkProviderServer;
 import org.spongepowered.common.mixin.plugin.entityactivation.interfaces.IModData_Activation;
 
-import java.util.HashMap;
 import java.util.Map;
 
 public class EntityActivationRange {
@@ -89,16 +91,7 @@ public class EntityActivationRange {
     static AxisAlignedBB aquaticBB = new AxisAlignedBB(0, 0, 0, 0, 0, 0);
     static AxisAlignedBB ambientBB = new AxisAlignedBB(0, 0, 0, 0, 0, 0);
     static AxisAlignedBB tileEntityBB = new AxisAlignedBB(0, 0, 0, 0, 0, 0);
-    @SuppressWarnings("serial") static Map<Byte, Integer> maxActivationRanges = new HashMap<Byte, Integer>() {
-
-        {
-            put((byte) 1, 32);
-            put((byte) 2, 32);
-            put((byte) 3, 32);
-            put((byte) 4, 32);
-            put((byte) 5, 16);
-        }
-    };
+    static Map<Byte, Integer> maxActivationRanges = Maps.newHashMap();
 
     /**
      * Initializes an entities type on construction to specify what group this
@@ -159,10 +152,14 @@ public class EntityActivationRange {
         if (type == EntityTypes.UNKNOWN || !(type instanceof SpongeEntityType)) {
             return false;
         }
-        SpongeEntityType spongeType = (SpongeEntityType) type;
+        final SpongeEntityType spongeType = (SpongeEntityType) type;
+        final byte activationType = spongeEntity.getActivationType();
+        if (!spongeType.isActivationRangeInitialized()) {
+            addEntityToConfig(entity.world, spongeType, activationType);
+            spongeType.setActivationRangeInitialized(true);
+        }
 
-        byte activationType = spongeEntity.getActivationType();
-        EntityActivationModCategory entityMod = config.getModList().get(spongeType.getModId());
+        EntityActivationModCategory entityMod = config.getModList().get(spongeType.getModId().toLowerCase());
         int defaultActivationRange = config.getDefaultRanges().get(activationTypeMappings.get(activationType));
         if (entityMod == null) {
             // use default activation range
@@ -177,7 +174,7 @@ public class EntityActivationRange {
         }
 
         Integer defaultModActivationRange = entityMod.getDefaultRanges().get(activationTypeMappings.get(activationType));
-        Integer entityActivationRange = entityMod.getEntityList().get(type.getName());
+        Integer entityActivationRange = entityMod.getEntityList().get(type.getName().toLowerCase());
         if (defaultModActivationRange != null && entityActivationRange == null) {
             spongeEntity.setActivationRange(defaultModActivationRange);
             if (defaultModActivationRange <= 0) {
@@ -220,6 +217,10 @@ public class EntityActivationRange {
      * @param world The world to perform activation checks in
      */
     public static void activateEntities(World world) {
+        if (((IMixinWorld) world).isFake()) {
+            return;
+        }
+
         for (EntityPlayer player : world.playerEntities) {
 
             int maxRange = 0;
@@ -385,6 +386,16 @@ public class EntityActivationRange {
         if (entity.world.isRemote || !entity.addedToChunk || entity instanceof EntityFireworkRocket) {
             return true;
         }
+        final IMixinChunk activeChunk = ((IMixinEntity) entity).getActiveChunk();
+        if (activeChunk == null) {
+            // Should never happen but just in case for mods, always tick
+            return true;
+        }
+
+        // If in forced chunk or is player
+        if (activeChunk.isPersistedChunk() || (!SpongeImplHooks.isFakePlayer(entity) && entity instanceof EntityPlayerMP)) {
+            return true;
+        }
 
         long currentTick = SpongeImpl.getServer().getTickCounter();
         IModData_Activation spongeEntity = (IModData_Activation) entity;
@@ -405,16 +416,8 @@ public class EntityActivationRange {
             isActive = false;
         }
 
-        // Make sure not on edge of unloaded chunk
-        int x = MathHelper.floor(entity.posX);
-        int z = MathHelper.floor(entity.posZ);
-        IMixinChunk spongeChunk = isActive ? (IMixinChunk)((IMixinChunkProviderServer) entity.world.getChunkProvider()).getLoadedChunkWithoutMarkingActive(x >> 4, z >> 4) : null;
-        if (isActive && (spongeChunk == null || !spongeChunk.areNeighborsLoaded())) {
+        if (isActive && !activeChunk.areNeighborsLoaded()) {
             isActive = false;
-        }
-
-        if (!isActive && spongeChunk != null && spongeChunk.isPersistedChunk()) {
-            isActive = true;
         }
 
         return isActive;
@@ -425,48 +428,57 @@ public class EntityActivationRange {
         checkNotNull(type, "type");
 
         SpongeConfig<?> config = ((IMixinWorldServer) world).getActiveConfig();
-        if (config == null || type == null || !config.getConfig().getEntityActivationRange().autoPopulateData()) {
+        if (config == null || type == null) {
             return;
         }
 
+        final boolean autoPopulate = config.getConfig().getEntityActivationRange().autoPopulateData();
+        boolean requiresSave = false;
         String entityType = "misc";
         entityType = EntityActivationRange.activationTypeMappings.get(activationType);
-        boolean requiresSave = false;
+        final String entityModId = type.getModId().toLowerCase();
+        final String entityId = type.getName().toLowerCase();
         EntityActivationRangeCategory activationCategory = config.getConfig().getEntityActivationRange();
-        EntityActivationModCategory entityMod = activationCategory.getModList().get(type.getModId());
-        if (entityMod == null) {
+        EntityActivationModCategory entityMod = activationCategory.getModList().get(entityModId);
+        Integer defaultActivationRange = activationCategory.getDefaultRanges().get(entityType);
+        if (defaultActivationRange == null) {
+            defaultActivationRange = 32;
+        }
+        Integer activationRange = activationCategory.getDefaultRanges().get(entityType);
+
+        if (autoPopulate && entityMod == null) {
             entityMod = new EntityActivationModCategory();
-            activationCategory.getModList().put(type.getModId(), entityMod);
+            activationCategory.getModList().put(entityModId, entityMod);
             requiresSave = true;
         }
-
         if (entityMod != null) {
-            // check for activation type overrides
-            Integer modActivationRange = entityMod.getDefaultRanges().get(entityType);
-            if (modActivationRange == null) {
-                entityMod.getDefaultRanges().put(entityType, activationType == 5 ? 16 : 32);
+            final Integer modActivationRange = entityMod.getDefaultRanges().get(entityType);
+            if (autoPopulate && modActivationRange == null) {
+                entityMod.getDefaultRanges().put(entityType, defaultActivationRange);
                 requiresSave = true;
-            } else if (modActivationRange != null) {
-                // check max ranges
-                if (modActivationRange > maxActivationRanges.get(activationType)) {
-                    maxActivationRanges.put(activationType, modActivationRange);
-                }
+            } else if (modActivationRange != null && modActivationRange > activationRange) {
+                activationRange = modActivationRange;
             }
 
-            // check for entity overrides
-            Integer entityActivationRange = entityMod.getEntityList().get(type.getName());
-            if (entityActivationRange == null) {
-                entityMod.getEntityList().put(type.getName(), entityMod.getDefaultRanges().get(activationTypeMappings.get(activationType)));
+            final Integer entityActivationRange = entityMod.getEntityList().get(entityId);
+            if (autoPopulate && entityActivationRange == null) {
+                entityMod.getEntityList().put(entityId, entityMod.getDefaultRanges().get(entityType));
                 requiresSave = true;
-            } else if (entityActivationRange != null) {
-                // check max ranges
-                if (entityActivationRange > maxActivationRanges.get(activationType)) {
-                    maxActivationRanges.put(activationType, entityActivationRange);
-                }
+            }
+            if (entityActivationRange != null && entityActivationRange > activationRange) {
+                activationRange = entityActivationRange;
             }
         }
 
-        if (requiresSave) {
+        // check max ranges
+        Integer maxRange = maxActivationRanges.get(activationType);
+        if (maxRange == null) {
+            maxActivationRanges.put(activationType, activationRange);
+        } else if (activationRange > maxRange) {
+            maxActivationRanges.put(activationType, activationRange);
+        }
+
+        if (autoPopulate && requiresSave) {
             config.save();
         }
     }

@@ -182,6 +182,12 @@ public abstract class MixinEntityVillager extends MixinEntityAgeable implements 
         // Sponge
         List<Career> careers = (List<Career>) this.profession.getCareers();
 
+        // Sponge start - throw an informative exception if we somehow have no careeres
+        if (careers.size() == 0) {
+            throw new IllegalStateException(String.format("Villager '%s' with profession '%s' has no careers!", this, this.profession));
+        }
+        // Sponge end
+
         // EntityVillager.ITradeList[][][] aentityvillager$itradelist = DEFAULT_TRADE_LIST_MAP[this.getProfession()];
 
         if (this.careerId != 0 && this.careerLevel != 0) {
@@ -231,5 +237,10 @@ public abstract class MixinEntityVillager extends MixinEntityAgeable implements 
     @Override
     public CarriedInventory<? extends Carrier> getInventory() {
         return this;
+    }
+
+    @Override
+    public Optional<Villager> getCarrier() {
+        return Optional.of(this);
     }
 }

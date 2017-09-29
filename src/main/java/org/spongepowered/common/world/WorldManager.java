@@ -78,6 +78,7 @@ import org.spongepowered.common.interfaces.world.IMixinDimensionType;
 import org.spongepowered.common.interfaces.world.IMixinWorldInfo;
 import org.spongepowered.common.interfaces.world.IMixinWorldServer;
 import org.spongepowered.common.interfaces.world.IMixinWorldSettings;
+import org.spongepowered.common.interfaces.world.gen.IMixinChunkProviderServer;
 import org.spongepowered.common.util.SpongeHooks;
 
 import java.io.DataInputStream;
@@ -540,24 +541,6 @@ public final class WorldManager {
         }
     }
 
-    public static Collection<WorldProperties> getUnloadedWorlds() throws IOException {
-        final Optional<Path> optCurrentSavesDir = getCurrentSavesDirectory();
-        checkState(optCurrentSavesDir.isPresent(), "Attempt made to get unloaded worlds too early!");
-
-        final List<WorldProperties> worlds = new ArrayList<>();
-        try (final DirectoryStream<Path> stream = Files.newDirectoryStream(optCurrentSavesDir.get(), LEVEL_AND_SPONGE)) {
-            for (Path worldFolder : stream) {
-                final String worldFolderName = worldFolder.getFileName().toString();
-                final WorldInfo worldInfo = new AnvilSaveHandler(WorldManager.getCurrentSavesDirectory().get().toFile(), worldFolderName, true,
-                        SpongeImpl.getServer().getDataFixer()).loadWorldInfo();
-                if (worldInfo != null) {
-                    worlds.add((WorldProperties) worldInfo);
-                }
-            }
-        }
-        return worlds;
-    }
-
     public static Optional<WorldServer> loadWorld(UUID uuid) {
         checkNotNull(uuid);
         // If someone tries to load loaded world, return it
@@ -833,9 +816,11 @@ public final class WorldManager {
         // Set the worlds on the Minecraft server
         reorderWorldsVanillaFirst();
 
+        ((IMixinChunkProviderServer) worldServer.getChunkProvider()).setForceChunkRequests(true);
         SpongeImpl.postEvent(SpongeEventFactory.createLoadWorldEvent(Cause.of(NamedCause.source(Sponge.getServer())),
                 (org.spongepowered.api.world.World) worldServer));
         ((IMixinMinecraftServer) server).prepareSpawnArea(worldServer);
+        ((IMixinChunkProviderServer) worldServer.getChunkProvider()).setForceChunkRequests(false);
         return worldServer;
     }
 
