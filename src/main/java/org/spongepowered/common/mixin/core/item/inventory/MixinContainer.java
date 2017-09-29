@@ -25,7 +25,6 @@
 package org.spongepowered.common.mixin.core.item.inventory;
 
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IContainerListener;
 import net.minecraft.inventory.IInventory;
@@ -116,25 +115,6 @@ public abstract class MixinContainer implements org.spongepowered.api.item.inven
             this.init();
         }
         return this.archetype;
-    }
-
-    /**
-     * @author TheRaspPie
-     * @reason If dropped item is null (nothing gets dropped), re-add the item stack.
-     */
-    @Overwrite
-    public void onContainerClosed(EntityPlayer playerIn)
-    {
-        InventoryPlayer inventoryplayer = playerIn.inventory;
-
-        if (!inventoryplayer.getItemStack().isEmpty())
-        {
-            ItemStack stack = inventoryplayer.getItemStack();
-            Object res = playerIn.dropItem(stack, false);
-            inventoryplayer.setItemStack(ItemStack.EMPTY);
-            if (res == null)
-                inventoryplayer.addItemStackToInventory(stack);
-        }
     }
 
     /**
